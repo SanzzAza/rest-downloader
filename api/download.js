@@ -32,15 +32,15 @@ async function scrapeReal(platform, url) {
 
   // --- TIKTOK ---
   if (platform === "tiktok") {
-    const videoId = extractTikTokId(url);
+    // Resolve URL (terutama untuk vt.tiktok.com redirect)
+    const resolved = await resolveTikTokUrl(url);
+    const resolvedUrl = resolved.resolvedUrl;
+    const videoId = resolved.videoId || extractTikTokId(resolvedUrl);
     let videoUrl = null, thumbnail = null, caption = null, author = null;
     let methodUsed = "tiktok_graphql_attempt";
     let graphqlSuccess = false;
 
     // 1. GRAPHQL: TikTok Mobile API /aweme/v1/feed/
-    // Ini yang dipakai web downloader profesional. Data `downloads.nowm`,
-    // `downloads.wm`, dan `downloads.mp3` berasal dari `video.play_addr.url_list`,
-    // `video.download_addr.url_list`, dan `music.play_url.url_list`.
     if (videoId) {
       try {
         const graphqlUrl = `https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id=${videoId}&count=1`;
@@ -119,7 +119,7 @@ async function scrapeReal(platform, url) {
 
     // 2. FALLBACK OEMBED PUBLIK
     try {
-      const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
+      const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(resolvedUrl)}`;
       const oembedRes = await fetch(oembedUrl, {
         headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", "Accept": "application/json" }
       });
@@ -138,7 +138,7 @@ async function scrapeReal(platform, url) {
     // 3. FALLBACK SCRAPE PUBLIK
     if (!videoUrl) {
       try {
-        const pageRes = await fetch(url, {
+        const pageRes = await fetch(resolvedUrl, {
           headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Referer": "https://www.tiktok.com/" },
           signal: AbortSignal.timeout(8000)
         });
@@ -256,8 +256,28 @@ function buildError(platform, url, message) {
 }
 
 function extractTikTokId(url) {
-  const m = url.match(/video\/(\d+)/);
-  return m ? m[1] : null;
+  let m = url.match(/video\/(\d+)/);
+  if (m) return m[1];
+  return null;
+}
+
+async function resolveTikTokUrl(originalUrl) {
+  try {
+    const res = await fetch(originalUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(5000)
+    });
+    const location = res.headers.get("location") || res.url;
+    if (location && location !== originalUrl) {
+      return { resolvedUrl: location, videoId: extractTikTokId(location) || extractTikTokId(originalUrl) };
+    }
+    return { resolvedUrl: originalUrl, videoId: extractTikTokId(originalUrl) };
+  } catch (e) {
+    return { resolvedUrl: originalUrl, videoId: null };
+  }
 }
 
 function extractIGShortcode(url) {
