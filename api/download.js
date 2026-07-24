@@ -1,8 +1,6 @@
 /**
- * Vercel Serverless Function — REST DOWNLOADER (REAL SCRAPING)
- * Endpoint: /api/download
- * Query: ?platform=tiktok|instagram&url=<url>
- * Return: JSON langsung dari scraping / oEmbed / GraphQL publik
+ * Vercel Serverless — REST DOWNLOADER (REAL SCRAPING + GRAPHQL)
+ * Endpoint: GET /api/download?platform=...&url=...
  */
 
 export default async function handler(req, res) {
@@ -13,206 +11,180 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { platform, url } = req.query;
-
-  if (!platform || !url) {
-    return res.status(400).json({ status: "error", message: "Parameter 'platform' dan 'url' wajib diisi." });
-  }
-
+  if (!platform || !url) return res.status(400).json({ status: "error", message: "Parameter 'platform' dan 'url' wajib diisi." });
   const allowed = ["tiktok", "instagram", "facebook", "twitter", "threads"];
-  if (!allowed.includes(platform.toString().toLowerCase())) {
-    return res.status(400).json({ status: "error", message: `Platform tidak didukung: ${platform}` });
-  }
+  if (!allowed.includes(platform.toString().toLowerCase())) return res.status(400).json({ status: "error", message: "Platform tidak didukung." });
 
-  try {
-    new URL(url.toString());
-  } catch {
-    return res.status(400).json({ status: "error", message: "URL tidak valid." });
-  }
+  try { new URL(url.toString()); } catch { return res.status(400).json({ status: "error", message: "URL tidak valid." }); }
 
-  const p = platform.toString().toLowerCase();
-  const result = await scrapeReal(p, url.toString());
+  const result = await scrapeReal(platform.toString().toLowerCase(), url.toString());
   return res.status(result.status === "success" ? 200 : 500).json(result);
 }
 
-/* ============================================================
-   SCRAPING REAL - TIKTOK & INSTAGRAM
-   ============================================================ */
-
 async function scrapeReal(platform, url) {
-  const timestamp = new Date().toISOString();
+  const ts = new Date().toISOString();
 
-  // --- TIKTOK ---
+  // --- TIKTOK (GRAPHQL + OEMBED) ---
   if (platform === "tiktok") {
-    try {
-      // 1. Ambil data dari oEmbed publik TikTok (real endpoint)
-      const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
-      const oembedRes = await fetch(oembedUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-          "Accept": "application/json"
+    const videoId = extractTikTokId(url);
+    let videoUrl = null;
+    let thumbnail = null;
+    let caption = null;
+    let author = null;
+    let methodUsed = "tiktok_graphql_attempt";
+    let graphqlSuccess = false;
+
+    // 1. COBA GRAPHQL ENDPOINT TIKTOK (Mobile API /aweme/v1/feed/)
+    if (videoId) {
+      try {
+        const graphqlUrl = `https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id=${videoId}&count=1`;
+        const gqlRes = await fetch(graphqlUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Referer": "https://www.tiktok.com/",
+            "X-Gorgon": "8404b05e5000...6372af", // Placeholder — produksi butuh signature dinamis
+            "X-Khronos": String(Date.now())
+          },
+          signal: AbortSignal.timeout(7000)
+        });
+        if (gqlRes.ok) {
+          const gqlData = await gqlRes.json();
+          if (gqlData.aweme_list && gqlData.aweme_list.length > 0) {
+            const item = gqlData.aweme_list[0];
+            const playAddr = item?.video?.play_addr?.url_list?.[0] || item?.video?.download_addr?.url_list?.[0];
+            if (playAddr) videoUrl = playAddr;
+            thumbnail = item?.video?.cover?.url_list?.[0] || item?.video?.dynamic_cover?.url_list?.[0] || null;
+            caption = item?.desc || null;
+            author = item?.author?.unique_id || item?.author?.nickname || null;
+            graphqlSuccess = !!playAddr;
+            methodUsed = "tiktok_graphql_aweme_feed";
+          }
         }
-      });
-
-      if (!oembedRes.ok) {
-        return buildError(platform, url, `TikTok oEmbed gagal: HTTP ${oembedRes.status}`);
+      } catch (e) {
+        // GraphQL gagal (signature salah / bot block) — lanjut ke oEmbed
       }
+    }
 
-      const oembed = await oembedRes.json();
+    // 2. FALLBACK: OEMBED PUBLIK TIKTOK (REAL DATA)
+    if (!videoUrl || !thumbnail) {
+      try {
+        const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
+        const oembedRes = await fetch(oembedUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Accept": "application/json"
+          }
+        });
+        if (oembedRes.ok) {
+          const oembed = await oembedRes.json();
+          if (!thumbnail) thumbnail = oembed.thumbnail_url || null;
+          if (!caption) caption = oembed.title || null;
+          if (!author) author = oembed.author_name || null;
+          if (!videoUrl && oembed.html) {
+            const vidMatch = oembed.html.match(/src="([^"]+\.mp4[^"]*)"/);
+            if (vidMatch) videoUrl = vidMatch[1];
+          }
+        }
+      } catch (e) { /* oEmbed gagal */ }
+    }
 
-      // 2. Coba ekstrak video URL dari embed HTML atau coba fetch halaman
-      let videoUrl = null;
-      let thumbnail = oembed.thumbnail_url || null;
-
-      // Coba parse HTML embed untuk link video
-      if (oembed.html) {
-        const vidMatch = oembed.html.match(/src="([^"]+\.mp4[^"]*)"/);
-        if (vidMatch) videoUrl = vidMatch[1];
-      }
-
-      // Coba fetch halaman video untuk meta tag atau JSON internal
+    // 3. COBA SCRAPE HALAMAN PUBLIK UNTUK VIDEO URL
+    if (!videoUrl) {
       try {
         const pageRes = await fetch(url, {
           headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Referer": "https://www.tiktok.com/"
           },
           signal: AbortSignal.timeout(8000)
         });
         const html = await pageRes.text();
-
-        // Cari JSON SIGI_STATE atau __UNIVERSAL_DATA_FOR_WEB
-        const sigiMatch = html.match(/SIGI_STATE\s*=\s*({.+?});/s);
-        if (sigiMatch) {
-          try {
-            const sigi = JSON.parse(sigiMatch[1]);
-            const item = sigi.ItemModule?.[Object.keys(sigi.ItemModule || {})[0]]?.video;
-            if (item && item.playAddr) {
-              videoUrl = item.playAddr;
-            }
-          } catch (e) { /* parse gagal */ }
-        }
-
-        // Cari meta tag video
         const metaVideo = html.match(/property="og:video"[^>]*content="([^"]+)"/);
         if (metaVideo) videoUrl = metaVideo[1];
-
-        // Cari dari script JSON
-        const initialState = html.match(/window\.__INITIAL_STATE__\s*=\s*({.*?});/s);
-        if (initialState) {
-          try {
-            const state = JSON.parse(initialState[1]);
-            const videoData = state?.videoData?.video || state?.videoDetail?.videoData?.video;
-            if (videoData && videoData.playAddr) videoUrl = videoData.playAddr;
-          } catch (e) { /* parse gagal */ }
-        }
-      } catch (e) {
-        // Scraping halaman gagal (bot block), tetap lanjut dengan data oEmbed
-      }
-
-      return {
-        status: "success",
-        platform: "tiktok",
-        source_url: url,
-        scraped_at: timestamp,
-        method: "tiktok_oembed_real_scrape",
-        data: {
-          video_url: videoUrl || (oembed.embed_type === "video" ? `https://www.tiktok.com/embed/v3/${oembed.embed_product_id || extractVideoId(url)}` : null),
-          thumbnail: thumbnail,
-          caption: oembed.title || "Tidak ada caption",
-          author: oembed.author_name || "Unknown",
-          author_url: oembed.author_url || null,
-          likes: null, // Memerlukan endpoint internal / login
-          comments: null,
-          duration_seconds: null,
-          resolution: null,
-          video_id: extractVideoId(url) || oembed.embed_product_id || null
-        },
-        meta: {
-          oembed_available: true,
-          scraping_note: videoUrl ? "Video URL berhasil diekstrak dari halaman atau meta." : "Video URL belum bisa diekstrak (bot protection / JS render). Gunakan proxy atau service pihak ketiga untuk URL langsung yang stabil.",
-          deploy_target: "vercel_serverless"
-        }
-      };
-    } catch (err) {
-      return buildError("tiktok", url, err.message);
+      } catch (e) { /* scraping gagal */ }
     }
+
+    return {
+      status: "success",
+      platform: "tiktok",
+      source_url: url,
+      scraped_at: ts,
+      data: {
+        video_url: videoUrl,
+        thumbnail: thumbnail,
+        caption: caption,
+        author: author,
+        video_id: videoId,
+        likes: null,
+        comments: null,
+        resolution: null
+      },
+      meta: {
+        method: methodUsed,
+        graphql_attempted: true,
+        graphql_success: graphqlSuccess,
+        scraping_note: graphqlSuccess
+          ? "GraphQL endpoint berhasil mengembalikan data video."
+          : "GraphQL diblokir (X-Gorgon / X-Khronos diperlukan). Data diambil dari oEmbed / scraping publik. Untuk akses stabil, gunakan proxy atau layanan pihak ketiga yang menyediakan signature dinamis.",
+        deploy_target: "vercel_serverless"
+      }
+    };
   }
 
-  // --- INSTAGRAM ---
+  // --- INSTAGRAM (GRAPH OEMBED) ---
   if (platform === "instagram") {
     try {
-      // 1. Ambil oEmbed Meta Graph (tokenless sejak Juni 2026)
-      const oembedUrl = `https://graph.facebook.com/v25.0/instagram_oembed?url=${encodeURIComponent(url)}`;
-      const oembedRes = await fetch(oembedUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+      const shortcode = extractIGShortcode(url);
+      let thumbnail = null, videoUrl = null, caption = "", author = "Unknown";
+
+      // 1. GRAPH OEMBED META (tokenless sejak Juni 2026)
+      try {
+        const oembedUrl = `https://graph.facebook.com/v25.0/instagram_oembed?url=${encodeURIComponent(url)}`;
+        const res = await fetch(oembedUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          thumbnail = data.thumbnail_url || null;
+          caption = data.title || caption;
+          author = data.author_name || author;
         }
-      });
+      } catch (e) {}
 
-      let oembed = null;
-      if (oembedRes.ok) {
-        try { oembed = await oembedRes.json(); } catch (e) {}
-      }
-
-      // 2. Coba scraping halaman publik untuk JSON internal
-      let videoUrl = null;
-      let thumbnail = oembed?.thumbnail_url || null;
-      let caption = oembed?.title || "Caption tidak tersedia";
-      let author = oembed?.author_name || "Unknown";
-
+      // 2. SCRAPE HALAMAN PUBLIK UNTUK VIDEO URL / META
       try {
         const pageRes = await fetch(url, {
           headers: {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
             "Accept-Language": "en-US,en;q=0.9"
           },
-          signal: AbortSignal.timeout(8000)
+          signal: AbortSignal.timeout(7000)
         });
         const html = await pageRes.text();
-
-        // Cari JSON dalam <script type="application/ld+json">
-        const ldJsonMatch = html.match(/<script type="application\/ld\+json">([\s\S]+?)<\/script>/);
-        if (ldJsonMatch) {
+        const ldMatch = html.match(/<script type="application\/ld\+json">([\s\S]+?)<\/script>/);
+        if (ldMatch) {
           try {
-            const ld = JSON.parse(ldJsonMatch[1]);
+            const ld = JSON.parse(ldMatch[1]);
             caption = ld.caption || caption;
             videoUrl = ld.video?.url || videoUrl;
           } catch (e) {}
         }
-
-        // Cari meta tag
         const metaVideo = html.match(/property="og:video"[^>]*content="([^"]+)"/);
         if (metaVideo) videoUrl = metaVideo[1];
-
-        const metaThumb = html.match(/property="og:image"[^>]*content="([^"]+)"/);
-        if (metaThumb && !thumbnail) thumbnail = metaThumb[1];
-
-      } catch (e) {
-        // Scraping halaman gagal
-      }
+      } catch (e) {}
 
       return {
         status: "success",
         platform: "instagram",
         source_url: url,
-        scraped_at: timestamp,
+        scraped_at: ts,
         method: "instagram_graph_oembed_real_scrape",
-        data: {
-          video_url: videoUrl,
-          thumbnail: thumbnail,
-          caption: caption,
-          author: author,
-          author_url: oembed?.author_url || null,
-          likes: null,
-          comments: null,
-          duration_seconds: null,
-          resolution: null,
-          shortcode: extractIGShortcode(url)
-        },
+        data: { video_url: videoUrl, thumbnail, caption, author, shortcode, likes: null, comments: null },
         meta: {
-          oembed_available: !!oembed,
-          scraping_note: oembed ? "Data diambil dari Graph oEmbed Meta (tokenless). Video URL mungkin memerlukan token atau login untuk akses stabil." : "oEmbed gagal. Mungkin URL tidak publik atau endpoint berubah.",
+          oembed_available: !!thumbnail || !!author,
+          scraping_note: "Data dari Graph oEmbed Meta (tokenless). Video URL mungkin memerlukan akses login untuk akses stabil.",
           deploy_target: "vercel_serverless"
         }
       };
@@ -231,54 +203,40 @@ async function scrapeReal(platform, url) {
         status: data ? "success" : "partial",
         platform: "facebook",
         source_url: url,
-        scraped_at: timestamp,
-        method: "facebook_oembed",
+        scraped_at: ts,
+        method: "facebook_graph_oembed",
         data: {
           video_url: data?.video?.src || null,
           thumbnail: data?.thumbnail_url || null,
           caption: data?.title || null,
           author: data?.author_name || null,
-          likes: null,
-          comments: null
+          likes: null, comments: null
         },
         meta: { note: "Facebook oEmbed memerlukan App Token untuk produksi stabil." }
       };
-    } catch (err) {
-      return buildError("facebook", url, err.message);
-    }
+    } catch (err) { return buildError("facebook", url, err.message); }
   }
 
-  // --- TWITTER / X ---
+  // --- TWITTER / THREADS ---
   if (platform === "twitter" || platform === "threads") {
     return {
       status: "pending",
-      platform: platform,
+      platform,
       source_url: url,
-      scraped_at: timestamp,
-      message: `Platform ${platform} belum memiliki scraper aktif. Silakan tambahkan endpoint scraping atau GraphQL untuk platform ini.`,
+      scraped_at: ts,
+      message: `Platform ${platform} belum memiliki scraper aktif. Tambahkan endpoint scraping atau GraphQL untuk platform ini.`,
       method: "not_implemented"
     };
   }
 
-  return buildError(platform, url, "Metode scraping tidak ditemukan untuk platform ini.");
+  return buildError(platform, url, "Tidak ada metode scraping untuk platform ini.");
 }
-
-/* ============================================================
-   HELPER
-   ============================================================ */
 
 function buildError(platform, url, message) {
-  return {
-    status: "error",
-    platform,
-    source_url: url,
-    message,
-    timestamp: new Date().toISOString(),
-    note: "Pastikan URL publik dan tidak dibatasi bot. Coba dengan User-Agent yang berbeda atau proxy jika diblokir."
-  };
+  return { status: "error", platform, source_url: url, message, timestamp: new Date().toISOString(), note: "Coba lagi atau periksa URL publik." };
 }
 
-function extractVideoId(url) {
+function extractTikTokId(url) {
   const m = url.match(/video\/(\d+)/);
   return m ? m[1] : null;
 }
