@@ -37,6 +37,8 @@ async function scrapeReal(platform, url) {
     const resolvedUrl = resolved.resolvedUrl;
     const videoId = resolved.videoId || extractTikTokId(resolvedUrl);
     let videoUrl = null, thumbnail = null, caption = null, author = null;
+    let playAddr = [];
+    let downloadAddr = [];
     let methodUsed = "tiktok_graphql_attempt";
     let graphqlSuccess = false;
 
@@ -146,6 +148,41 @@ async function scrapeReal(platform, url) {
         const metaVideo = html.match(/property="og:video"[^>]*content="([^"]+)"/);
         if (metaVideo) videoUrl = metaVideo[1];
       } catch (e) {}
+    }
+
+    // 4. PROXY FALLBACK: Coba proxy publik / endpoint alternatif untuk URL video
+    if (!videoUrl || playAddr.length === 0) {
+      try {
+        // Coba endpoint proxy publik TikTok
+        const proxyUrl = `https://api.tiktokv.com/aweme/v1/feed/?aweme_id=${videoId}&count=1`;
+        const proxyRes = await fetch(proxyUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Referer": "https://www.tiktok.com/",
+            "X-Gorgon": "8404b05e5000b0e8a6c5d3e2f1a0b9c8",
+            "X-Khronos": String(Date.now())
+          },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (proxyRes.ok) {
+          const proxyData = await proxyRes.json();
+          if (proxyData.aweme_list && proxyData.aweme_list.length > 0) {
+            const item = proxyData.aweme_list[0];
+            const playAddr2 = item?.video?.play_addr?.url_list || item?.video?.download_addr?.url_list || [];
+            const downloadAddr2 = item?.video?.download_addr?.url_list || [];
+            if (playAddr2.length) {
+              videoUrl = playAddr2[0];
+              playAddr.push(...playAddr2);
+            }
+            if (downloadAddr2.length) {
+              downloadAddr.push(...downloadAddr2);
+            }
+          }
+        }
+      } catch (e) {
+        // Proxy gagal — lanjut
+      }
     }
 
     // Fallback response format (tidak lengkap seperti GraphQL)
