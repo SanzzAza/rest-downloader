@@ -1,0 +1,13 @@
+{
+  "name": "rest-downloader",
+  "version": "1.0.0",
+  "description": "REST API Downloader — Neo Brutalism Design. TikTok, Instagram, Facebook, Twitter/X, Threads.",
+  "main": "index.html",
+  "scripts": {
+    "dev": "python3 -m http.server 8000",
+    "deploy": "vercel --prod"
+  },
+  "keywords": ["downloader", "rest-api", "json", "tiktok", "instagram", "neo-brutalism"],
+  "author": "",
+  "license": "MIT"
+}

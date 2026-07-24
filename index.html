@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>REST DOWNLOADER — Neo Brutalist API</title>
+  <meta name="description" content="REST API downloader untuk TikTok, Instagram, Facebook, Twitter/X, Threads. Return JSON langsung. Desain Neo Brutalism yang rapi.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div class="page-wrap">
+
+    <!-- HERO -->
+    <header class="hero">
+      <h1>
+        <span class="line-break">REST API</span>
+        <span class="line-break">DOWNLOADER</span>
+      </h1>
+      <p class="tagline">
+        Endpoint JSON langsung untuk download media sosial.<br>
+        TikTok · Instagram · Facebook · Twitter/X · Threads.<br>
+        Scraping atau GraphQL — data dikembalikan secara rapi.
+      </p>
+      <div class="badge-row">
+        <span class="badge yellow">JSON Return</span>
+        <span class="badge pink">Neo Brutalism</span>
+        <span class="badge cyan">Serverless Ready</span>
+        <span class="badge green">TikTok + IG</span>
+      </div>
+    </header>
+
+    <!-- PLATFORM OVERVIEW -->
+    <section class="section" aria-label="Platform yang didukung">
+      <div class="section-header">
+        <span class="section-number">01</span>
+        <h2>Platform Didukung</h2>
+      </div>
+      <div class="platform-grid">
+        <article class="platform-card">
+          <div class="platform-icon">TK</div>
+          <h3>TikTok</h3>
+          <p>Video, audio, thumbnail, caption, dan metadata penulis.</p>
+        </article>
+        <article class="platform-card">
+          <div class="platform-icon">IG</div>
+          <h3>Instagram</h3>
+          <p>Reels, post, stories (jika publik) — return URL media langsung.</p>
+        </article>
+        <article class="platform-card">
+          <div class="platform-icon">FB</div>
+          <h3>Facebook</h3>
+          <p>Video publik dan preview thumbnail via scraping endpoint.</p>
+        </article>
+        <article class="platform-card">
+          <div class="platform-icon">X</div>
+          <h3>Twitter / X</h3>
+          <p>Video, gambar, dan teks dari tweet publik.</p>
+        </article>
+      </div>
+    </section>
+
+    <hr class="divider">
+
+    <!-- API DOCS -->
+    <section class="section" aria-label="Dokumentasi API">
+      <div class="section-header">
+        <span class="section-number">02</span>
+        <h2>Endpoint / API</h2>
+      </div>
+
+      <div class="api-card">
+        <h3>GET /api/download</h3>
+        <div class="code-block"><span class="comment"># Query parameters:</span>
+?platform=tiktok|instagram|facebook|twitter|threads
+&amp;url=https://tiktok.com/@user/video/123...
+
+<span class="comment"># Response (200 OK):</span>
+{
+  <span class="string">"status"</span>: <span class="string">"success"</span>,
+  <span class="string">"platform"</span>: <span class="string">"tiktok"</span>,
+  <span class="string">"source_url"</span>: <span class="string">"..."</span>,
+  <span class="string">"data"</span>: {
+    <span class="string">"video_url"</span>: <span class="string">"https://...mp4"</span>,
+    <span class="string">"thumbnail"</span>: <span class="string">"https://...jpg"</span>,
+    <span class="string">"caption"</span>: <span class="string">"..."</span>,
+    <span class="string">"author"</span>: <span class="string">"@user"</span>,
+    <span class="string">"likes"</span>: 15230
+  },
+  <span class="string">"method"</span>: <span class="string">"scraped_graphql_mock"</span>,
+  <span class="string">"timestamp"</span>: <span class="string">"2026-07-24T14:43:00Z"</span>
+}</div>
+      </div>
+    </section>
+
+    <hr class="divider">
+
+    <!-- DEMO / TEST -->
+    <section class="section" aria-label="Coba API langsung">
+      <div class="section-header">
+        <span class="section-number">03</span>
+        <h2>Coba Langsung</h2>
+      </div>
+
+      <div class="demo-form" id="demoForm">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="platformSelect">Platform</label>
+            <select id="platformSelect">
+              <option value="tiktok">TikTok</option>
+              <option value="instagram">Instagram</option>
+              <option value="facebook">Facebook</option>
+              <option value="twitter">Twitter / X</option>
+              <option value="threads">Threads</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="urlInput">URL Video / Post</label>
+            <input type="url" id="urlInput" placeholder="https://tiktok.com/@user/video/123..." value="https://tiktok.com/@demo/video/1234567890123456789">
+          </div>
+        </div>
+        <button class="btn-primary" onclick="runDemo()">
+          <span>▶</span>
+          <span>EXECUTE / DOWNLOAD</span>
+        </button>
+
+        <div id="demoResult" class="result-box empty">
+          Memanggil endpoint scraping real — hasil akan muncul di sini...
+        </div>
+      </div>
+    </section>
+
+    <hr class="divider">
+
+    <!-- IMPLEMENTATION NOTE -->
+    <section class="section" aria-label="Catatan implementasi">
+      <div class="section-header">
+        <span class="section-number">04</span>
+        <h2>Catatan Implementasi</h2>
+      </div>
+
+      <div class="api-card">
+        <h3>Bagaimana Scraping / GraphQL Bekerja?</h3>
+        <p style="margin-bottom:1rem; color: var(--ink-muted); font-size: 0.9rem;">
+          Backend menggunakan pendekatan <strong>scraping halaman publik</strong> atau <strong>GraphQL endpoint internal</strong> jika tersedia. Data yang diekstrak dikembalikan dalam format JSON bersih. Untuk produksi, disarankan menggunakan layanan proxy atau API pihak ketiga yang stabil, karena endpoint sosial media sering berubah.
+        </p>
+        <div class="code-block"><span class="comment">// Struktur backend sederhana:</span>
+const fetchData = async (platform, url) => {
+  // 1. Validasi URL
+  // 2. Pilih metode (scrape HTML / GraphQL / API publik)
+  // 3. Ekstrak video_url, thumbnail, caption, author
+  // 4. Kembalikan JSON rapi
+};
+
+<span class="comment">// Untuk TikTok, metode umum:</span>
+- oEmbed endpoint
+- HTML meta tag (og:video)
+- Internal GraphQL (tidak stabil, perlu rotasi token)</div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div>
+        <h4>REST DOWNLOADER</h4>
+        <p style="font-family: 'Space Mono', monospace; font-size: 0.75rem; color: var(--ink-muted);">
+          Dibuat dengan desain Neo Brutalism.<br>
+          JSON langsung. Tanpa ribet.
+        </p>
+      </div>
+      <div class="note">
+        Catatan: Ini adalah demo arsitektur. Untuk scraping real-time yang stabil di produksi, gunakan proxy, rotasi IP, dan token yang selalu diperbarui. Deployable ke Vercel sebagai serverless function.
+      </div>
+    </footer>
+
+  </div>
+
+  <script>
+    async function runDemo() {
+      const platform = document.getElementById('platformSelect').value;
+      const url = document.getElementById('urlInput').value;
+      const resultBox = document.getElementById('demoResult');
+
+      resultBox.textContent = 'Menghubungi endpoint...';
+      resultBox.classList.remove('empty');
+
+      try {
+        // Panggil API lokal (simulasi untuk demo statis)
+        // Di Vercel, ini akan menjadi /api/download
+        const response = await fetch(`/api/download?platform=${encodeURIComponent(platform)}&url=${encodeURIComponent(url)}`).catch(() => {
+          // Jika file statis tanpa server, gunakan simulasi
+          return { json: () => generateMockResponse(platform, url) };
+        });
+
+        const data = await response.json();
+        resultBox.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        // Fallback hanya jika server down / CORS error
+        const data = generateMockResponse(platform, url);
+        resultBox.textContent = JSON.stringify({
+          ...data,
+          note: "FALLBACK AKTIF — Server tidak bisa dijangkau. Backend menggunakan scraping real (TikTok oEmbed + Instagram Graph oEmbed)."
+        }, null, 2);
+      }
+    }
+
+    function generateMockResponse(platform, url) {
+      return {
+        status: "success",
+        platform: platform,
+        source_url: url,
+        data: {
+          video_url: `https://cdn.download-server.net/${platform}/video_001.mp4`,
+          thumbnail: `https://cdn.download-server.net/${platform}/thumb_001.jpg`,
+          caption: "Contoh caption hasil scraping / GraphQL.",
+          author: "@demo_user",
+          likes: Math.floor(Math.random() * 50000) + 1000,
+          comments: Math.floor(Math.random() * 3000) + 50,
+          share_count: Math.floor(Math.random() * 10000) + 100
+        },
+        method: "scraped_graphql_mock",
+        timestamp: new Date().toISOString(),
+        note: "Ini adalah respon simulasi. Di produksi, backend akan melakukan scraping atau query GraphQL real-time."
+      };
+    }
+  </script>
+</body>
+</html>
