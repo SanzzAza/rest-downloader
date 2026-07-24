@@ -41,6 +41,7 @@ body {
   margin-bottom: 3rem;
   box-shadow: 10px 10px 0 var(--ink);
   position: relative;
+  overflow: hidden;
 }
 
 .hero::after {
@@ -54,23 +55,26 @@ body {
 
 .hero h1 {
   font-weight: 900;
-  font-size: clamp(2.2rem, 9vw, 5.5rem);
-  line-height: 0.92;
-  letter-spacing: -0.06em;
+  font-size: clamp(1.8rem, 11vw, 4.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
   text-transform: uppercase;
   margin-bottom: 1.25rem;
-  word-break: keep-all;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .hero .sub {
   font-family: 'Space Mono', monospace;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: #555;
   border-left: 5px solid var(--accent);
   padding-left: 1rem;
-  max-width: 560px;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* --- BADGES --- */
