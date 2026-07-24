@@ -2,11 +2,6 @@
   "version": 2,
   "routes": [
     {
-      "src": "/api/download",
-      "methods": ["GET", "OPTIONS"],
-      "dest": "/api/download.js"
-    },
-    {
       "src": "/css/style.css",
       "dest": "/css/style.css"
     },
